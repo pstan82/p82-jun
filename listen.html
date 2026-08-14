@@ -7,48 +7,83 @@
 <style>
 body{font-family:system-ui;background:#111;color:#eee;padding:20px;text-align:center}
 button{padding:15px 25px;margin:10px;font-size:18px;border-radius:10px;border:0;background:#0a84ff;color:#fff}
-.rec{background:#ff3b30} audio{width:100%;margin-top:20px}
+.rec{background:#ff3b30}.recording{background:#34c759}
+audio{width:100%;margin-top:20px} #timer{font-size:24px;margin:10px}
 </style>
 </head>
 <body>
 <h2>Live Radio</h2>
 <p>DJ is playing now</p>
 <button onclick="play()">▶️ Play Stream</button>
-<button class="rec" onclick="sendVoice()">🎤 Send Voice Note</button>
+<button id="recBtn" class="rec" onclick="toggleVoice()">🎤 Send Voice Note</button>
+<div id="timer"></div>
 <audio id="player" controls></audio>
 
 <script>
 let playlist = [];
+let i = 0;
 const p = document.getElementById('player');
+let recorder, chunks = [], timer, seconds = 0;
+const MAX_SECONDS = 120; // 2 minutes
 
 // Load playlist from DJ
 function loadPl(){
   playlist = JSON.parse(localStorage.getItem('pl')||'[]');
-  if(playlist.length) playItem(playlist[0]);
+  if(playlist.length) playItem(playlist[i]);
 }
 
 function getYtId(url){ return url.split('v=')[1]?.split('&')[0] || url.split('/').pop().split('?')[0]; }
+
 function playItem(item){
   if(item.type=='yt') p.src = `https://yt.lemnoslife.com/api/v1/stream?id=${item.src}&itag=140`;
+  else if(item.type=='blob') p.src = item.src;
   else p.src = item.src;
-  p.play();
+  p.play().catch(e=>alert('Play error: '+e.message));
 }
+
 function play(){ loadPl(); }
 
-async function sendVoice(){
+function updateTimer(){
+  seconds++;
+  document.getElementById('timer').innerText = `Recording: ${Math.floor(seconds/60)}:${String(seconds%60).padStart(2,'0')} / 2:00`;
+  if(seconds >= MAX_SECONDS) stopVoice();
+}
+
+async function toggleVoice(){
+  if(!recorder) startVoice();
+  else stopVoice();
+}
+
+async function startVoice(){
   let s = await navigator.mediaDevices.getUserMedia({audio:true});
-  let rec = new MediaRecorder(s);
-  let chunks=[];
-  rec.ondataavailable = e => chunks.push(e.data);
-  rec.onstop = () => {
+  recorder = new MediaRecorder(s);
+  chunks=[];
+  recorder.ondataavailable = e => chunks.push(e.data);
+  recorder.onstop = () => {
     let blob = new Blob(chunks, {type:'audio/webm'});
     let pl = JSON.parse(localStorage.getItem('pl')||'[]');
     pl.push({type:'blob', src:URL.createObjectURL(blob), title:'[AUDIENCE] '+new Date().toLocaleTimeString()});
     localStorage.setItem('pl', JSON.stringify(pl));
-    alert('Voice sent to DJ!');
+    alert('Voice note sent to DJ!');
   }
-  rec.start(); setTimeout(()=>rec.stop(), 5000); // 5 sec note
+  recorder.start();
+  seconds = 0;
+  document.getElementById('recBtn').innerText = '⏹️ Stop';
+  document.getElementById('recBtn').className = 'recording';
+  timer = setInterval(updateTimer, 1000);
 }
+
+function stopVoice(){
+  if(recorder){
+    recorder.stop();
+    clearInterval(timer);
+    document.getElementById('timer').innerText = '';
+    document.getElementById('recBtn').innerText = '🎤 Send Voice Note';
+    document.getElementById('recBtn').className = 'rec';
+    recorder = null;
+  }
+}
+
 p.onended = ()=>{ i=(i+1)%playlist.length; playItem(playlist[i]) };
 loadPl();
 </script>
