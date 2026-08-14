@@ -2,80 +2,93 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>DJ Control</title>
+<title>DJ Mixer</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <style>
-body{font-family:system-ui;background:#111;color:#eee;padding:15px;max-width:800px;margin:auto}
-input,button{padding:10px;margin:4px;border-radius:8px;border:0;font-size:15px}
-button{background:#0a84ff;color:#fff}.danger{background:#ff3b30}.ghost{background:#333}
-#list{list-style:none;padding:0} #list li{padding:12px;background:#1a1a1a;margin:5px 0;border-radius:8px;cursor:pointer}
-#list li.active{border-left:4px solid #0a84ff}
-audio{width:100%;margin-top:15px}
+body{font-family:system-ui;background:#111;color:#eee;padding:15px;max-width:600px;margin:auto;text-align:center}
+button{padding:16px;margin:8px 0;border-radius:12px;border:0;width:100%;background:#0a84ff;color:#fff;font-size:18px;font-weight:bold}
+.rec{background:#ff3b30}.recording{background:#34c759}
+#status{color:#0f0;margin-top:15px}
+#vol{width:100%}
 </style>
 </head>
 <body>
-<h2>DJ Control</h2>
+<h2>DJ Mixer</h2>
 
-<input id="url" placeholder="Paste https radio stream URL">
-<button onclick="add()">Add to Playlist</button>
-<button onclick="play()">Play</button>
-<button onclick="next()">Next</button>
-<button class="danger" id="recBtn" onclick="toggleRec()">Rec Voice</button>
-<button class="ghost" onclick="savePl()">Save</button>
-<button class="ghost" onclick="loadPl()">Load</button>
-
-<ul id="list"></ul>
-<audio id="player" controls></audio>
+<button onclick="playMusic()">▶️ Play Radio 32k</button>
+<button id="micBtn" class="rec" onclick="toggleMic()">🎤 Hold to Talk</button>
+<input id="vol" type="range" min="0" max="100" value="30" oninput="setMusicVol(this.value)">
+<div>Music Volume: <span id="volTxt">30</span>%</div>
+<div id="status">Ready</div>
 
 <script>
-let playlist = JSON.parse(localStorage.getItem('pl')||'[]');
-let i = 0; const p = document.getElementById('player');
-let recorder, chunks=[];
+let music = new Audio();
+let mic = new Audio();
+let ctx, musicNode, micNode, gainNode;
+let isPlaying = false;
 
-function saveState(){ localStorage.setItem('pl', JSON.stringify(playlist)); render(); }
-function render(){
-  list.innerHTML='';
-  playlist.forEach((u,idx)=>{
-    let li=document.createElement('li');
-    if(i==idx) li.className='active';
-    li.innerText=`${idx+1}. ${u.title}`;
-    li.onclick=()=>{i=idx; play()};
-    list.appendChild(li);
-  });
+const RADIO_URL = 'https://stream.radioparadise.com/mp3-32';
+
+// Setup Web Audio Mixer
+async function setupAudio(){
+  if(ctx) return;
+  ctx = new AudioContext();
+  gainNode = ctx.createGain();
+  gainNode.gain.value = 0.3; // 30% default
+  
+  musicNode = ctx.createMediaElementSource(music);
+  micNode = ctx.createMediaElementSource(mic);
+  
+  musicNode.connect(gainNode).connect(ctx.destination);
+  micNode.connect(ctx.destination); // mic at 100%
 }
 
-function add(){
-  let u = url.value.trim(); if(!u) return;
-  playlist.push({type:'url', src:u, title:u.split('/').pop().slice(0,30)});
-  url.value=''; saveState();
+function setMusicVol(v){
+  volTxt.innerText = v;
+  if(gainNode) gainNode.gain.value = v/100;
 }
 
-function playItem(item){
-  p.src = item.src;
-  p.play().catch(e=>alert('Play failed: '+e.message));
+async function playMusic(){
+  await setupAudio();
+  if(!isPlaying){
+    music.src = RADIO_URL;
+    music.crossOrigin = "anonymous";
+    music.loop = true; // no stop
+    await music.play();
+    isPlaying = true;
+    status.innerText = 'Music Playing at 30%';
+  }
 }
-function play(){ if(playlist.length) playItem(playlist[i]); render(); }
-function next(){ i=(i+1)%playlist.length; play(); }
 
-async function toggleRec(){
-  if(!recorder){
-    let s = await navigator.mediaDevices.getUserMedia({audio:true});
-    recorder = new MediaRecorder(s);
-    chunks=[];
-    recorder.ondataavailable = e => chunks.push(e.data);
-    recorder.onstop = () => {
+let mediaRec, chunks=[];
+async function toggleMic(){
+  await setupAudio();
+  if(!mediaRec){
+    let stream = await navigator.mediaDevices.getUserMedia({audio:true});
+    mediaRec = new MediaRecorder(stream);
+    chunks = [];
+    mediaRec.ondataavailable = e => chunks.push(e.data);
+    mediaRec.onstop = () => {
       let blob = new Blob(chunks, {type:'audio/webm'});
-      playlist.push({type:'blob', src:URL.createObjectURL(blob), title:'[VOICE] '+new Date().toLocaleTimeString()});
-      chunks=[]; recorder=null; recBtn.innerText='Rec Voice'; saveState();
+      mic.src = URL.createObjectURL(blob);
+      mic.play(); // plays over music
+      status.innerText = 'Played voice over music';
     }
-    recorder.start(); recBtn.innerText='Stop Rec';
-  } else { recorder.stop(); }
+    mediaRec.start();
+    micBtn.innerText = '⏹️ Release to Send';
+    micBtn.className = 'recording';
+    status.innerText = 'Recording... music ducked to 30%';
+  } else {
+    mediaRec.stop();
+    mediaRec.stream.getTracks().forEach(t=>t.stop());
+    mediaRec = null;
+    micBtn.innerText = '🎤 Hold to Talk';
+    micBtn.className = 'rec';
+  }
 }
 
-function savePl(){ localStorage.setItem('pl_backup', JSON.stringify(playlist)); alert('Saved'); }
-function loadPl(){ playlist = JSON.parse(localStorage.getItem('pl_backup')||'[]'); i=0; saveState(); }
-
-p.onended = next; render();
+// Auto-resume music if it stops
+music.onended = ()=>{ music.play(); }
 </script>
 </body>
 </html>
