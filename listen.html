@@ -1,24 +1,63 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8"><title>Live Radio</title>
+<meta charset="UTF-8"><title>Listener</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <style>
-body{font-family:system-ui;background:#111;color:#eee;padding:20px;text-align:center}
-button{padding:18px 40px;margin:10px;font-size:20px;border-radius:14px;border:0;background:#0a84ff;color:#fff}
-audio{width:100%;margin-top:20px}
+body{font-family:system-ui;background:#111;color:#eee;padding:15px;max-width:650px;margin:auto;text-align:center}
+input,button{padding:14px;margin:6px 0;border-radius:10px;border:0;width:100%;box-sizing:border-box;font-size:16px}
+button{background:#0a84ff;color:#fff;font-weight:bold}
+.rec{background:#ff3b30}.recording{background:#34c759}
 </style>
 </head>
 <body>
-<h2>Live Radio</h2>
-<button onclick="play()">▶️ Listen Live</button>
-<audio id="p" controls></audio>
+<h2>Listener</h2>
+<input id="radioUrl" placeholder="Paste Radio/Stream URL" value="https://stream.radioparadise.com/mp3-32">
+<button onclick="playRadio()">▶️ Listen</button>
+
+<h3>Your Messages</h3>
+<button id="recBtn" class="rec" onclick="toggleRec()">🎤 Record Message</button>
+<small>Your message plays 10s later, over the music at 30%</small>
+<div id="status">Ready</div>
+
 <script>
-const p = document.getElementById('p');
-function play(){ 
-  p.src='https://stream.radioparadise.com/mp3-32'; 
-  p.loop=true;
-  p.play(); 
+let ctx, radio, gainNode, normalVol=1.0, isDucked=false;
+let msgQueue=[], mediaRec, chunks=[];
+
+async function init(){if(ctx)return;ctx=new AudioContext();gainNode=ctx.createGain();gainNode.gain.value=normalVol;}
+
+async function playRadio(){
+  await init();
+  radio = new Audio(radioUrl.value);
+  radio.crossOrigin="anonymous"; radio.loop=true;
+  ctx.createMediaElementSource(radio).connect(gainNode).connect(ctx.destination);
+  radio.play(); status.innerText='Listening'; tick();
+}
+
+function toggleRec(){
+  if(!mediaRec)startRec();else stopRec();
+}
+async function startRec(){
+  await init(); let s=await navigator.mediaDevices.getUserMedia({audio:true});
+  mediaRec=new MediaRecorder(s);chunks=[];
+  mediaRec.ondataavailable=e=>chunks.push(e.data);
+  mediaRec.onstop=()=>{msgQueue.push({blob:new Blob(chunks,{type:'audio/webm'}),playAt:Date.now()+10000});status.innerText='Message queued for 10s';};
+  mediaRec.start();recBtn.innerText='⏹️ Stop';recBtn.className='recording';
+}
+function stopRec(){mediaRec.stop();mediaRec.stream.getTracks().forEach(t=>t.stop());mediaRec=null;recBtn.innerText='🎤 Record Message';recBtn.className='rec';}
+
+function tick(){
+  setInterval(()=>{
+    if(msgQueue.length && Date.now()>=msgQueue[0].playAt){
+      let item=msgQueue.shift();
+      isDucked=true;
+      gainNode.gain.setTargetAtTime(0.3,ctx.currentTime,0.3);
+      let v=new Audio(URL.createObjectURL(item.blob));
+      ctx.createMediaElementSource(v).connect(ctx.destination);
+      v.play();
+      v.onended=()=>{gainNode.gain.setTargetAtTime(normalVol,ctx.currentTime,0.5);isDucked=false;}
+    }
+  },200);
 }
 </script>
 </body>
