@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Live Radio</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+body{font-family:system-ui;background:#111;color:#eee;padding:20px;text-align:center}
+button{padding:15px 25px;margin:10px;font-size:18px;border-radius:10px;border:0;background:#0a84ff;color:#fff}
+.rec{background:#ff3b30} audio{width:100%;margin-top:20px}
+</style>
+</head>
+<body>
+<h2>Live Radio</h2>
+<p>DJ is playing now</p>
+<button onclick="play()">▶️ Play Stream</button>
+<button class="rec" onclick="sendVoice()">🎤 Send Voice Note</button>
+<audio id="player" controls></audio>
+
+<script>
+let playlist = [];
+const p = document.getElementById('player');
+
+// Load playlist from DJ
+function loadPl(){
+  playlist = JSON.parse(localStorage.getItem('pl')||'[]');
+  if(playlist.length) playItem(playlist[0]);
+}
+
+function getYtId(url){ return url.split('v=')[1]?.split('&')[0] || url.split('/').pop().split('?')[0]; }
+function playItem(item){
+  if(item.type=='yt') p.src = `https://yt.lemnoslife.com/api/v1/stream?id=${item.src}&itag=140`;
+  else p.src = item.src;
+  p.play();
+}
+function play(){ loadPl(); }
+
+async function sendVoice(){
+  let s = await navigator.mediaDevices.getUserMedia({audio:true});
+  let rec = new MediaRecorder(s);
+  let chunks=[];
+  rec.ondataavailable = e => chunks.push(e.data);
+  rec.onstop = () => {
+    let blob = new Blob(chunks, {type:'audio/webm'});
+    let pl = JSON.parse(localStorage.getItem('pl')||'[]');
+    pl.push({type:'blob', src:URL.createObjectURL(blob), title:'[AUDIENCE] '+new Date().toLocaleTimeString()});
+    localStorage.setItem('pl', JSON.stringify(pl));
+    alert('Voice sent to DJ!');
+  }
+  rec.start(); setTimeout(()=>rec.stop(), 5000); // 5 sec note
+}
+p.onended = ()=>{ i=(i+1)%playlist.length; playItem(playlist[i]) };
+loadPl();
+</script>
+</body>
+</html>

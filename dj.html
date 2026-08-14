@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>DJ Control</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+body{font-family:system-ui;background:#111;color:#eee;padding:15px;max-width:900px;margin:auto}
+input,button{padding:9px;margin:3px;font-size:14px;border-radius:6px;border:0}
+button{background:#0a84ff;color:#fff}.rec{background:#ff3b30}.ghost{background:#333}
+#list{list-style:none;padding:0} #list li{padding:10px;background:#1a1a1a;margin:4px 0;border-radius:6px}
+#searchResults{background:#1a1a1a;border-radius:8px;padding:10px;max-height:250px;overflow:auto}
+#searchResults div{padding:8px;cursor:pointer} #searchResults div:hover{background:#222}
+audio{width:100%;margin-top:10px}
+</style>
+</head>
+<body>
+<h2>DJ Control</h2>
+
+<input id="search" placeholder="Search YouTube" size="25">
+<button onclick="doSearch()">Search</button>
+<div id="searchResults"></div>
+
+<input id="url" placeholder="Or paste radio/YT URL" size="25">
+<button onclick="add()">Add</button>
+<button onclick="play()">Play</button>
+<button onclick="next()">Next</button>
+<button id="recBtn" class="rec" onclick="toggleRec()">Rec</button>
+
+<div>
+<button class="ghost" onclick="savePl()">Save</button>
+<button class="ghost" onclick="loadPl()">Load</button>
+</div>
+
+<ul id="list"></ul>
+<audio id="player" controls crossorigin="anonymous"></audio>
+
+<script>
+let playlist = JSON.parse(localStorage.getItem('pl')||'[]');
+let i = 0;
+const p = document.getElementById('player');
+let recorder, chunks=[];
+
+function saveState(){ localStorage.setItem('pl', JSON.stringify(playlist)); render(); }
+function render(){
+  list.innerHTML='';
+  playlist.forEach((u,idx)=>{
+    let li=document.createElement('li');
+    if(i==idx) li.style.borderLeft='3px solid #0a84ff';
+    li.innerHTML=`${idx+1}. ${u.title}`;
+    li.onclick=()=>{i=idx; play()};
+    list.appendChild(li);
+  });
+}
+
+function getYtId(url){ return url.split('v=')[1]?.split('&')[0] || url.split('/').pop().split('?')[0]; }
+function add(url = url.value, title = url){
+  if(!url) return;
+  let item = url.includes('youtu')? {type:'yt', src:getYtId(url), title:'[YT] '+title} : {type:'url', src:url, title:title};
+  playlist.push(item); url.value=''; saveState();
+}
+
+function playItem(item){
+  if(item.type=='yt') p.src = `https://yt.lemnoslife.com/api/v1/stream?id=${item.src}&itag=140`;
+  else p.src = item.src;
+  p.play().catch(e=>alert(e.message));
+}
+function play(){ if(playlist.length) playItem(playlist[i]); render(); }
+function next(){ i=(i+1)%playlist.length; play(); }
+
+async function doSearch(){
+  let q = search.value.trim(); if(!q) return;
+  searchResults.innerHTML='Searching...';
+  let res = await fetch(`https://yt.lemnoslife.com/noKey/search?part=snippet&q=${encodeURIComponent(q)}`);
+  let data = await res.json();
+  searchResults.innerHTML = data.items.slice(0,8).map(v=>`<div onclick="add('https://youtu.be/${v.id.videoId}','${v.snippet.title}')"><b>${v.snippet.title}</b></div>`).join('');
+}
+
+async function toggleRec(){
+  if(!recorder){
+    let s = await navigator.mediaDevices.getUserMedia({audio:true});
+    recorder = new MediaRecorder(s);
+    recorder.ondataavailable = e => chunks.push(e.data);
+    recorder.onstop = () => {
+      let blob = new Blob(chunks, {type:'audio/webm'});
+      playlist.push({type:'blob', src:URL.createObjectURL(blob), title:'[VOICE] '+new Date().toLocaleTimeString()});
+      chunks=[]; recorder=null; saveState();
+    }
+    recorder.start(); recBtn.innerText='Stop';
+  } else { recorder.stop(); recBtn.innerText='Rec'; }
+}
+
+function savePl(){ localStorage.setItem('pl_backup', JSON.stringify(playlist)); alert('Saved'); }
+function loadPl(){ playlist = JSON.parse(localStorage.getItem('pl_backup')||'[]'); i=0; saveState(); }
+
+p.onended = next;
+render();
+</script>
+</body>
+</html>
