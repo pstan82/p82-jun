@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Radio Player</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  body{font-family:system-ui;background:#111;color:#eee;padding:20px;max-width:900px;margin:auto}
+  input,button{padding:9px;margin:4px;font-size:15px;border-radius:6px;border:0}
+  button{background:#0a84ff;color:#fff;cursor:pointer} button:hover{opacity:0.9}
+  button.rec{background:#ff3b30} button.active{background:#34c759}
+  #list{list-style:none;padding:0} #list li{padding:10px;background:#1a1a1a;margin:4px 0;border-radius:6px;display:flex;justify-content:space-between;align-items:center}
+  #list li.playing{background:#0a84ff33} #list li span{cursor:pointer;flex:1}
+  #searchResults{background:#1a1a1a;border-radius:8px;padding:10px;max-height:300px;overflow:auto;margin:10px 0}
+  #searchResults div{padding:8px;cursor:pointer;border-bottom:1px solid #222} #searchResults div:hover{background:#222}
+  audio{width:100%;margin-top:10px}.row{display:flex;flex-wrap:wrap}
+</style>
+</head>
+<body>
+<h2>Online Radio</h2>
+
+<div class="row">
+  <input id="search" placeholder="Search artist - song" size="22">
+  <button id="btnSearch">Search</button>
+  <input id="url" placeholder="Or paste stream/yt URL" size="22">
+  <button id="btnAdd">Add</button>
+  <button id="btnPlay">Play</button>
+  <button id="btnNext">Next</button>
+  <button id="btnRec" class="rec">Rec</button>
+</div>
+
+<div id="searchResults"></div>
+
+<div class="row">
+  <button id="btnSave">Save.m3u</button>
+  <input type="file" id="file" accept=".m3u" style="display:none">
+  <button id="btnLoad">Open.m3u</button>
+  <button id="btnClear">Clear</button>
+  <button id="btnShare">Copy Link</button>
+</div>
+
+<ul id="list"></ul>
+<audio id="player" controls crossorigin="anonymous"></audio>
+
+<script>
+document.addEventListener('DOMContentLoaded', () => { // <- waits for HTML to load
+let playlist = [];
+let i = 0;
+let recorder, chunks = [];
+
+const $ = id => document.getElementById(id);
+const player = $('player'), list = $('list'), searchResults = $('searchResults');
+
+$('btnSearch').onclick = doSearch;
+$('btnAdd').onclick = () => add();
+$('btnPlay').onclick = play;
+$('btnNext').onclick = next;
+$('btnRec').onclick = toggleRec;
+$('btnSave').onclick = savePl;
+$('btnLoad').onclick = () => $('file').click();
+$('btnClear').onclick = clearPl;
+$('btnShare').onclick = () => {navigator.clipboard.writeText(location.href); alert('Link copied')};
+$('file').onchange = loadPl;
+
+function getYtId(url){
+  try{
+    if(url.includes('youtu.be/')) return url.split('youtu.be/')[1].split('?')[0];
+    if(url.includes('v=')) return url.split('v=')[1].split('&')[0];
+    return url;
+  }catch{return url}
+}
+
+function add(url = $('url').value.trim(), title = url){
+  if(!url) return alert('Paste URL first');
+  let item = /youtu/.test(url)?
+    {type:'yt', src: getYtId(url), title:'[YT] '+title} :
+    {type:'url', src:url, title:title};
+  playlist.push(item);
+  $('url').value = '';
+  render();
+}
+
+function render(){
+  list.innerHTML = '';
+  playlist.forEach((u,idx) => {
+    const li = document.createElement('li');
+    if(i===idx) li.classList.add('playing');
+    li.innerHTML = `<span onclick="window.jump(${idx})">${idx+1}. ${u.title}</span><button onclick="window.del(${idx})">X</button>`;
+    list.appendChild(li);
+  });
+}
+
+window.jump = (idx)=>{ i=idx; play(); }
+window.del = (idx)=>{ playlist.splice(idx,1); if(i>=playlist.length)i=0; render(); }
+function clearPl(){ playlist=[]; i=0; player.pause(); player.src=''; render(); }
+
+function playItem(item){
+  // FIX: Use yt.lemnoslife.com for CORS. Itag 140 = 128kbps audio
+  if(item.type==='yt'){
+    player.src = `https://yt.lemnoslife.com/api/v1/stream?id=${item.src}&itag=140`;
+  }else{
+    player.src = item.src;
+  }
+  player.play().catch(e=>alert('Play error: '+e.message));
+}
+
+function play(){ if(playlist.length) playItem(playlist[i]); render(); }
+function next(){ if(!playlist.length)return; i=(i+1)%playlist.length; play(); }
+
+async function doSearch(){
+  const q = $('search').value.trim();
+  if(!q) return;
+  searchResults.innerHTML = 'Searching...';
+  try{
+    const res = await fetch(`https://yt.lemnoslife.com/noKey/search?part=snippet&q=${encodeURIComponent(q)}`);
+    const data = await res.json();
+    searchResults.innerHTML = data.items.slice(0,10).map(v =>
+      `<div onclick="add('https://youtu.be/${v.id.videoId}','${v.snippet.title.replace(/'/g,"&#39;")}')"><b>${v.snippet.title}</b><br><small>${v.snippet.channelTitle}</small></div>`
+    ).join('');
+  }catch(e){
+    searchResults.innerHTML = 'Search failed. Try pasting YT link directly';
+  }
+}
+
+function savePl(){
+  const content = '#EXTM3U\n' + playlist.map(it => it.type==='yt'? `https://youtu.be/${it.src}` : it.src).join('\n');
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([content]));
+  a.download = 'playlist.m3u'; a.click();
+}
+
+function loadPl(e){
+  const reader = new FileReader();
+  reader.onload = () => {
+    playlist = [];
+    reader.result.split('\n').forEach(line => {
+      line=line.trim();
+      if(line &&!line.startsWith('#')) add(line, line);
+    });
+    i=0; render();
+  };
+  reader.readAsText(e.target.files[0]);
+}
+
+async function toggleRec(){
+  try{
+    if(!recorder){
+      const s = await navigator.mediaDevices.getUserMedia({audio:true});
+      recorder = new MediaRecorder(s);
+      recorder.ondataavailable = e => chunks.push(e.data);
+      recorder.onstop = () => {
+        const blob = new Blob(chunks, {type:'audio/webm'});
+        playlist.push({type:'blob', src:URL.createObjectURL(blob), title:'[VOICE] '+new Date().toLocaleTimeString()});
+        chunks=[]; recorder=null; render();
+      }
+      recorder.start(); $('btnRec').innerText='Stop'; $('btnRec').classList.add('active');
+    }else{
+      recorder.stop(); $('btnRec').innerText='Rec'; $('btnRec').classList.remove('active');
+    }
+  }catch(e){ alert('Mic error: '+e.message) }
+}
+
+player.onended = next;
+}); // end DOMContentLoaded
+</script>
+</body>
+</html>
