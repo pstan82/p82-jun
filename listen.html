@@ -6,83 +6,49 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <style>
 body{font-family:system-ui;background:#111;color:#eee;padding:20px;text-align:center}
-button{padding:15px 25px;margin:10px;font-size:18px;border-radius:10px;border:0;background:#0a84ff;color:#fff}
+button{padding:16px 30px;margin:10px;font-size:18px;border-radius:12px;border:0;background:#0a84ff;color:#fff}
 .rec{background:#ff3b30}.recording{background:#34c759}
-audio{width:100%;margin-top:20px} #timer{font-size:24px;margin:10px}
+audio{width:100%;margin-top:20px} #timer{font-size:22px;margin:10px;color:#0f0}
 </style>
 </head>
 <body>
 <h2>Live Radio</h2>
-<p>DJ is playing now</p>
-<button onclick="play()">▶️ Play Stream</button>
-<button id="recBtn" class="rec" onclick="toggleVoice()">🎤 Send Voice Note</button>
+<button onclick="play()">▶️ Play</button>
+<button id="recBtn" class="rec" onclick="toggleVoice()">🎤 Send 2min Voice</button>
 <div id="timer"></div>
 <audio id="player" controls></audio>
 
 <script>
-let playlist = [];
-let i = 0;
-const p = document.getElementById('player');
-let recorder, chunks = [], timer, seconds = 0;
-const MAX_SECONDS = 120; // 2 minutes
+let playlist = []; let i = 0; const p = document.getElementById('player');
+let recorder, chunks = [], timer, seconds = 0; const MAX = 120;
 
-// Load playlist from DJ
-function loadPl(){
-  playlist = JSON.parse(localStorage.getItem('pl')||'[]');
-  if(playlist.length) playItem(playlist[i]);
-}
-
-function getYtId(url){ return url.split('v=')[1]?.split('&')[0] || url.split('/').pop().split('?')[0]; }
+function loadPl(){ playlist = JSON.parse(localStorage.getItem('pl')||'[]'); }
 
 function playItem(item){
-  if(item.type=='yt') p.src = `https://yt.lemnoslife.com/api/v1/stream?id=${item.src}&itag=140`;
-  else if(item.type=='blob') p.src = item.src;
-  else p.src = item.src;
-  p.play().catch(e=>alert('Play error: '+e.message));
+  if(item.type=='blob') p.src = item.src; else p.src = item.src;
+  p.play();
 }
+function play(){ loadPl(); if(playlist.length) playItem(playlist[i]); }
 
-function play(){ loadPl(); }
-
-function updateTimer(){
-  seconds++;
-  document.getElementById('timer').innerText = `Recording: ${Math.floor(seconds/60)}:${String(seconds%60).padStart(2,'0')} / 2:00`;
-  if(seconds >= MAX_SECONDS) stopVoice();
-}
+function updateTimer(){ seconds++; timer.innerText=`Rec: ${Math.floor(seconds/60)}:${String(seconds%60).padStart(2,'0')} / 2:00`; if(seconds>=MAX) stopVoice(); }
 
 async function toggleVoice(){
-  if(!recorder) startVoice();
-  else stopVoice();
+  if(!recorder) startVoice(); else stopVoice();
 }
-
 async function startVoice(){
   let s = await navigator.mediaDevices.getUserMedia({audio:true});
-  recorder = new MediaRecorder(s);
-  chunks=[];
+  recorder = new MediaRecorder(s); chunks=[]; seconds=0;
   recorder.ondataavailable = e => chunks.push(e.data);
   recorder.onstop = () => {
     let blob = new Blob(chunks, {type:'audio/webm'});
     let pl = JSON.parse(localStorage.getItem('pl')||'[]');
     pl.push({type:'blob', src:URL.createObjectURL(blob), title:'[AUDIENCE] '+new Date().toLocaleTimeString()});
     localStorage.setItem('pl', JSON.stringify(pl));
-    alert('Voice note sent to DJ!');
+    alert('Sent to DJ!');
   }
-  recorder.start();
-  seconds = 0;
-  document.getElementById('recBtn').innerText = '⏹️ Stop';
-  document.getElementById('recBtn').className = 'recording';
-  timer = setInterval(updateTimer, 1000);
+  recorder.start(); recBtn.innerText='⏹️ Stop'; recBtn.className='recording'; timer=setInterval(updateTimer,1000);
 }
-
-function stopVoice(){
-  if(recorder){
-    recorder.stop();
-    clearInterval(timer);
-    document.getElementById('timer').innerText = '';
-    document.getElementById('recBtn').innerText = '🎤 Send Voice Note';
-    document.getElementById('recBtn').className = 'rec';
-    recorder = null;
-  }
-}
+function stopVoice(){ recorder.stop(); clearInterval(timer); timer.innerText=''; recBtn.innerText='🎤 Send 2min Voice'; recBtn.className='rec'; recorder=null; }
 
 p.onended = ()=>{ i=(i+1)%playlist.length; playItem(playlist[i]) };
 loadPl();
