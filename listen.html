@@ -1,57 +1,25 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<title>Live Radio</title>
+<meta charset="UTF-8"><title>Live Radio</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <style>
 body{font-family:system-ui;background:#111;color:#eee;padding:20px;text-align:center}
-button{padding:16px 30px;margin:10px;font-size:18px;border-radius:12px;border:0;background:#0a84ff;color:#fff}
-.rec{background:#ff3b30}.recording{background:#34c759}
-audio{width:100%;margin-top:20px} #timer{font-size:22px;margin:10px;color:#0f0}
+button{padding:18px 40px;margin:10px;font-size:20px;border-radius:14px;border:0;background:#0a84ff;color:#fff}
+audio{width:100%;margin-top:20px}
 </style>
 </head>
 <body>
 <h2>Live Radio</h2>
-<button onclick="play()">▶️ Play</button>
-<button id="recBtn" class="rec" onclick="toggleVoice()">🎤 Send 2min Voice</button>
-<div id="timer"></div>
-<audio id="player" controls></audio>
-
+<button onclick="play()">▶️ Listen Live</button>
+<audio id="p" controls></audio>
 <script>
-let playlist = []; let i = 0; const p = document.getElementById('player');
-let recorder, chunks = [], timer, seconds = 0; const MAX = 120;
-
-function loadPl(){ playlist = JSON.parse(localStorage.getItem('pl')||'[]'); }
-
-function playItem(item){
-  if(item.type=='blob') p.src = item.src; else p.src = item.src;
-  p.play();
+const p = document.getElementById('p');
+function play(){ 
+  p.src='https://stream.radioparadise.com/mp3-32'; 
+  p.loop=true;
+  p.play(); 
 }
-function play(){ loadPl(); if(playlist.length) playItem(playlist[i]); }
-
-function updateTimer(){ seconds++; timer.innerText=`Rec: ${Math.floor(seconds/60)}:${String(seconds%60).padStart(2,'0')} / 2:00`; if(seconds>=MAX) stopVoice(); }
-
-async function toggleVoice(){
-  if(!recorder) startVoice(); else stopVoice();
-}
-async function startVoice(){
-  let s = await navigator.mediaDevices.getUserMedia({audio:true});
-  recorder = new MediaRecorder(s); chunks=[]; seconds=0;
-  recorder.ondataavailable = e => chunks.push(e.data);
-  recorder.onstop = () => {
-    let blob = new Blob(chunks, {type:'audio/webm'});
-    let pl = JSON.parse(localStorage.getItem('pl')||'[]');
-    pl.push({type:'blob', src:URL.createObjectURL(blob), title:'[AUDIENCE] '+new Date().toLocaleTimeString()});
-    localStorage.setItem('pl', JSON.stringify(pl));
-    alert('Sent to DJ!');
-  }
-  recorder.start(); recBtn.innerText='⏹️ Stop'; recBtn.className='recording'; timer=setInterval(updateTimer,1000);
-}
-function stopVoice(){ recorder.stop(); clearInterval(timer); timer.innerText=''; recBtn.innerText='🎤 Send 2min Voice'; recBtn.className='rec'; recorder=null; }
-
-p.onended = ()=>{ i=(i+1)%playlist.length; playItem(playlist[i]) };
-loadPl();
 </script>
 </body>
 </html>
