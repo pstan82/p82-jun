@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Listener</title>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            background: #1a1a1a;
+            font-family: 'Courier New', monospace;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .panel {
+            max-width: 500px;
+            width: 100%;
+            background: #2a2a2a;
+            padding: 30px;
+            border-radius: 12px;
+            border: 2px solid #444;
+            text-align: center;
+        }
+        .panel-header {
+            color: #888;
+            font-size: 14px;
+            letter-spacing: 4px;
+            text-transform: uppercase;
+            padding-bottom: 15px;
+            border-bottom: 2px solid #333;
+            margin-bottom: 20px;
+        }
+        .btn-group {
+            display: flex;
+            gap: 20px;
+            justify-content: center;
+            margin: 20px 0;
+        }
+        .btn {
+            width: 120px;
+            height: 120px;
+            border-radius: 12px;
+            border: 4px solid #444;
+            font-family: 'Courier New', monospace;
+            font-weight: bold;
+            font-size: 14px;
+            text-transform: uppercase;
+            cursor: pointer;
+            transition: all 0.15s ease;
+            box-shadow: inset 0 -6px 0 rgba(0,0,0,0.4), 0 4px 12px rgba(0,0,0,0.5);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+            background: #222;
+            color: #555;
+        }
+        .btn:active { transform: translateY(4px); }
+        .btn .led { width: 14px; height: 14px; border-radius: 50%; background: #222; }
+        .btn .label { font-size: 10px; letter-spacing: 2px; color: #444; }
+
+        .btn-active { background: #1a3a1a; border-color: #2a5a2a; color: #7f7; }
+        .btn-active .led { background: #0f0; box-shadow: 0 0 20px #0f0; }
+        .btn-active .label { color: #7f7; }
+
+        .btn-recording { background: #3a1a1a; border-color: #5a2a2a; color: #f77; }
+        .btn-recording .led { background: #f00; box-shadow: 0 0 20px #f00; animation: blink 0.8s infinite; }
+        .btn-recording .label { color: #f77; }
+
+        @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+
+        .status-display {
+            background: #111;
+            border: 2px solid #333;
+            border-radius: 6px;
+            padding: 10px 14px;
+            margin: 15px 0;
+            color: #666;
+            font-size: 13px;
+            min-height: 40px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+        }
+        .status-display .dot { width: 10px; height: 10px; border-radius: 50%; }
+        .status-display .dot.green { background: #0f0; box-shadow: 0 0 10px #0f0; }
+        .status-display .dot.red { background: #f00; box-shadow: 0 0 10px #f00; }
+        .status-display .dot.off { background: #333; }
+
+        #player { width: 100%; margin-top: 10px; display: none; }
+        #timer { color: #0f0; font-size: 18px; margin: 10px 0; display: none; }
+    </style>
+</head>
+<body>
+
+<div class="panel">
+    <div class="panel-header">📻 LISTENER</div>
+
+    <div class="btn-group">
+        <button class="btn" id="playBtn" onclick="togglePlay()">
+            <span class="led"></span>
+            <span class="label">PLAY</span>
+        </button>
+
+        <button class="btn" id="recBtn" onclick="toggleRec()">
+            <span class="led"></span>
+            <span class="label">REC</span>
+        </button>
+    </div>
+
+    <div class="status-display" id="statusDisplay">
+        <span class="dot off"></span>
+        <span id="statusText">WAITING FOR DJ</span>
+    </div>
+
+    <div id="timer">⏱ 00:00 / 2:00</div>
+    <audio id="player" controls></audio>
+</div>
+
+<script>
+    const SUPA_URL = "https://YOUR_PROJECT.supabase.co";
+    const SUPA_KEY = "YOUR_ANON_KEY";
+    const supa = supabase.createClient(SUPA_URL, SUPA_KEY);
+
+    let player = document.getElementById('player');
+    let ctx, gainNode;
+    let isPlaying = false;
+    let isRecording = false;
+    let mediaRec, chunks = [];
+    let timerInterval, seconds = 0;
+    const MAX_SECONDS = 120;
+
+    // ─── FOLLOW DJ ───
+    supa.channel('source')
+        .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'nowPlaying' }, payload => {
+            if (payload.new.url) {
+                player.src = payload.new.url;
+                setStatus('DJ changed source', 'green');
+                if (isPlaying) player.play();
+            }
+        })
+        .subscribe();
+
+    supa.from('nowPlaying').select('url').eq('id', 1).single().then(({ data }) => {
+        if (data && data.url) { player.src = data.url; setStatus('Ready. Press PLAY.', 'green'); }
+    });
+
+    // ─── PLAY BUTTON ───
+    function togglePlay() {
+        const btn = document.getElementById('playBtn');
+        if (!isPlaying) {
+            isPlaying = true;
+            btn.classList.add('btn-active');
+            btn.querySelector('.label').textContent = 'PLAYING';
+            player.play();
+            setStatus('▶ Playing', 'green');
+        } else {
+            isPlaying = false;
+            btn.classList.remove('btn-active');
+            btn.querySelector('.label').textContent = 'PLAY';
+            player.pause();
+            setStatus('⏸ Paused', 'off');
+        }
+    }
+
+    // ─── RECORD BUTTON ───
+    function toggleRec() {
+        if (!isRecording) startRec();
+        else stopRec();
+    }
+
+    async function startRec() {
+        try {
+            let s = await navigator.mediaDevices.getUserMedia({ audio: true });
+            mediaRec = new MediaRecorder(s);
+            chunks = [];
+            seconds = 0;
+
+            mediaRec.ondataavailable = e => chunks.push(e.data);
+            mediaRec.onstop = () => {
+                let blob = new Blob(chunks, { type: 'audio/webm' });
+                let r = new FileReader();
+                r.onload = () => {
+                    supa.from('msgQueue').insert({
+                        audio: r.result,
+                        playAt: Date.now() + 10000,
+                        from: 'Listener',
+                        status: 'pending'
+                    }).then(() => {
+                        setStatus('✅ Message sent to DJ', 'green');
+                        document.getElementById('timer').style.display = 'none';
+                    });
+                };
+                r.readAsDataURL(blob);
+            };
+
+            mediaRec.start();
+            isRecording = true;
+            const btn = document.getElementById('recBtn');
+            btn.classList.add('btn-recording');
+            btn.querySelector('.label').textContent = 'RECORDING';
+            document.getElementById('timer').style.display = 'block';
+            setStatus('🔴 Recording... 2 min max', 'red');
+
+            timerInterval = setInterval(() => {
+                seconds++;
+                let mins = String(Math.floor(seconds / 60)).padStart(2, '0');
+                let secs = String(seconds % 60).padStart(2, '0');
+                document.getElementById('timer').textContent = `⏱ ${mins}:${secs} / 2:00`;
+                if (seconds >= MAX_SECONDS) stopRec();
+            }, 1000);
+
+        } catch(e) {
+            alert('Mic error: ' + e.message);
+        }
+    }
+
+    function stopRec() {
+        if (mediaRec && mediaRec.state !== 'inactive') {
+            mediaRec.stop();
+            mediaRec.stream.getTracks().forEach(t => t.stop());
+        }
+        mediaRec = null;
+        isRecording = false;
+        clearInterval(timerInterval);
+        const btn = document.getElementById('recBtn');
+        btn.classList.remove('btn-recording');
+        btn.querySelector('.label').textContent = 'REC';
+        document.getElementById('timer').style.display = 'none';
+        if (!isPlaying) setStatus('Recording stopped', 'off');
+    }
+
+    // ─── PLAY MESSAGES ───
+    supa.channel('messages')
+        .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'msgQueue' }, payload => {
+            if (payload.new.status === 'playing') playMessage(payload.new.audio);
+        })
+        .subscribe();
+
+    supa.channel('new_approved')
+        .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'msgQueue' }, payload => {
+            let msg = payload.new;
+            if (msg.status === 'approved') {
+                let delay = msg.playAt - Date.now();
+                if (delay > 0 && delay < 60000) {
+                    setTimeout(() => playMessage(msg.audio), delay);
+                    setStatus('⏳ Message in ' + Math.round(delay/1000) + 's', 'yellow');
+                }
+            }
+        })
+        .subscribe();
+
+    async function initDuck() {
+        if (ctx) return;
+        ctx = new AudioContext();
+        let src = ctx.createMediaElementSource(player);
+        gainNode = ctx.createGain();
+        gainNode.gain.value = 1.0;
+        src.connect(gainNode).connect(ctx.destination);
+    }
+
+    function playMessage(audioDataUrl) {
+        if (!gainNode) return;
+        gainNode.gain.setTargetAtTime(0.3, ctx.currentTime, 0.3);
+        setStatus('📢 Message (music 30%)', 'red');
+        let msg = new Audio(audioDataUrl);
+        msg.play();
+        msg.onended = () => {
+            gainNode.gain.setTargetAtTime(1.0, ctx.currentTime, 0.5);
+            setStatus('▶ Playing', 'green');
+        };
+    }
+
+    // ─── STATUS HELPER ───
+    function setStatus(text, type) {
+        const dot = document.querySelector('.status-display .dot');
+        const txt = document.getElementById('statusText');
+        dot.className = 'dot ' + type;
+        txt.textContent = text;
+    }
+
+    // ─── LISTENER COUNT ───
+    supa.ref('listeners').transaction(n => (n || 0) + 1);
+    window.onbeforeunload = () => supa.ref('listeners').transaction(n => (n || 1) - 1);
+
+    // ─── INIT ───
+    setStatus('Waiting for DJ...', 'off');
+</script>
+</body>
+</html>
+
