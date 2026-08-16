@@ -2,156 +2,94 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>DJ Pro Mixer</title>
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DJ Player</title>
 <style>
-body{font-family:system-ui;background:#111;color:#eee;padding:15px;max-width:650px;margin:auto}
-input,button{padding:14px;margin:6px 0;border-radius:10px;border:0;width:100%;box-sizing:border-box;font-size:16px}
-button{background:#0a84ff;color:#fff;font-weight:bold}
-.rec{background:#ff3b30}.recording{background:#34c759}
-.section{background:#1a1a1a;padding:12px;border-radius:10px;margin:10px 0}
-.row{display:flex;gap:8px}
-.row button{width:50%}
-#list{list-style:none;padding:0;max-height:150px;overflow:auto}
-#list li{background:#222;padding:8px;margin:4px 0;border-radius:6px;font-size:14px;cursor:pointer}
-#status{color:#0f0;margin-top:10px;text-align:center}
-small{color:#aaa}
+  body { background:#111; color:#eee; font-family: Arial; text-align:center; padding:20px; }
+  #search { width: 60%; padding:12px; border-radius:8px; border:none; font-size:16px; }
+  button { padding:12px 20px; border:none; border-radius:8px; background:#1DB954; color:#fff; cursor:pointer; margin-left:5px; }
+  #results { margin-top:20px; text-align:left; max-width:600px; margin:auto; }
+  .track { padding:10px; border-bottom:1px solid #333; cursor:pointer; }
+  .track:hover { background:#222; }
+  audio { width:100%; margin-top:20px; }
+  #status { color:#aaa; margin-top:10px; }
 </style>
 </head>
 <body>
-<h2>DJ Pro Mixer</h2>
 
-<div class="section">
-  <h3>1. Music Source</h3>
-  <input id="musicUrl" placeholder="Paste Radio URL, MP3, or Stream">
-  <div class="row">
-    <button onclick="addMusic()">+ Add URL</button>
-    <button onclick="loadPresets()">📻 Radio Presets</button>
-  </div>
-  <input id="searchArtist" placeholder="Search artist - uses Jamendo free music">
-  <button onclick="searchMusic()">🔍 Search Artist</button>
-  <ul id="musicList"></ul>
-  <button onclick="playMusic()">▶️ Play Music</button>
-  Normal Vol: <input id="vol" type="range" min="20" max="100" value="100" oninput="setVol(this.value)"> <span id="volTxt">100</span>%
-</div>
+<h1>🎧 DJ Player</h1>
+<input id="search" type="text" placeholder="Search artist or song...">
+<button onclick="searchTrack()">Search</button>
 
-<div class="section">
-  <h3>2. DJ Messages - plays 10s after record</h3>
-  <button id="recBtn" class="rec" onclick="toggleRec()">🎤 Record Message</button>
-  <ul id="msgList"></ul>
-</div>
+<div id="status"></div>
+<div id="results"></div>
 
-<div id="status">Ready</div>
+<audio id="player" controls></audio>
 
 <script>
-let ctx, gainNode, musicAudio;
-let normalVol = 1.0; let isDucked = false;
-let musicPlaylist = []; let musicIndex = 0; let musicPlaying = false;
-let msgQueue = []; let mediaRec, chunks = [];
+// СМЕНИ ТОВА С ТВОЯ CODESPACE URL
+const BACKEND_URL = "https://xxx-5000.app.github.dev"; 
 
-async function init(){
-  if(ctx) return;
-  ctx = new AudioContext();
-  gainNode = ctx.createGain();
-  gainNode.gain.value = normalVol;
-}
+const LOCAL_LIBRARY = [
+  {title: "Local Test", artist: "Me", url: "mp3/test.mp3"}
+];
 
-// RADIO PRESETS
-function loadPresets(){
-  let presets = [
-    'Radio Paradise 32k - https://stream.radioparadise.com/mp3-32',
-    'Lofi Girl - https://stream.zeno.fm/0r0a792kwz9uv',
-    'Chillhop - https://stream.zeno.fm/0r0a792kwz9uv'
-  ];
-  musicList.innerHTML = '';
-  presets.forEach(p => {
-    let [name,url] = p.split(' - ');
-    musicPlaylist.push(url);
-    musicList.innerHTML += `<li onclick="playSingle('${url}')">${name}</li>`;
-  });
-}
+async function searchTrack() {
+  const query = document.getElementById('search').value;
+  const resultsDiv = document.getElementById('results');
+  const statusDiv = document.getElementById('status');
+  resultsDiv.innerHTML = "";
+  statusDiv.innerText = "Searching...";
 
-// SEARCH ARTIST - using Jamendo free API
-async function searchMusic(){
-  let q = searchArtist.value.trim();
-  if(!q) return;
-  status.innerText = 'Searching...';
-  let res = await fetch(`https://api.jamendo.com/v3.0/tracks/?client_id=ba25b1ca&format=json&limit=5&namesearch=${q}`);
-  let data = await res.json();
-  musicList.innerHTML = '';
-  data.results.forEach(track => {
-    musicPlaylist.push(track.audio);
-    musicList.innerHTML += `<li onclick="playSingle('${track.audio}')">${track.name} - ${track.artist_name}</li>`;
-  });
-  status.innerText = `Found ${data.results.length} tracks`;
-}
+  // 1. Локално търсене
+  let local = LOCAL_LIBRARY.filter(t =>
+    (t.title + t.artist).toLowerCase().includes(query.toLowerCase())
+  );
 
-function playSingle(url){
-  musicPlaylist = [url]; musicIndex=0; playMusic();
-}
-
-function addMusic(){
-  let url = musicUrl.value.trim(); if(!url) return;
-  musicPlaylist.push(url);
-  musicList.innerHTML += `<li>${musicPlaylist.length}. ${url.split('/').pop()}</li>`;
-  musicUrl.value='';
-}
-
-function setVol(v){
-  normalVol = v/100; volTxt.innerText=v;
-  if(gainNode &&!isDucked) gainNode.gain.value=normalVol;
-}
-
-async function playMusic(){
-  if(!musicPlaylist.length) return alert('Add music first');
-  await init(); musicPlaying = true; playMusicTrack(musicIndex); tick();
-}
-
-function playMusicTrack(index){
-  musicAudio = new Audio(musicPlaylist[index]);
-  musicAudio.crossOrigin = "anonymous"; musicAudio.loop = false;
-  ctx.createMediaElementSource(musicAudio).connect(gainNode).connect(ctx.destination);
-  gainNode.gain.value = normalVol; musicAudio.play();
-  status.innerText = `Playing music`;
-  musicAudio.onended = () => { musicIndex = (musicIndex + 1) % musicPlaylist.length; playMusicTrack(musicIndex); }
-}
-
-// MESSAGES
-function toggleRec(){
-  if(!mediaRec) startRec(); else stopRec();
-}
-async function startRec(){
-  await init(); let s = await navigator.mediaDevices.getUserMedia({audio:true});
-  mediaRec = new MediaRecorder(s); chunks=[];
-  mediaRec.ondataavailable = e => chunks.push(e.data);
-  mediaRec.onstop = () => {
-    let blob = new Blob(chunks, {type:'audio/webm'});
-    msgQueue.push({blob, playAt: Date.now() + 10000});
-    msgList.innerHTML += `<li>DJ Msg ${msgQueue.length} - plays in 10s</li>`;
+  if(local.length > 0) {
+    statusDiv.innerText = "Found in local library";
+    showResults(local, "local");
+    return;
   }
-  mediaRec.start(); recBtn.innerText = '⏹️ Stop'; recBtn.className='recording';
-}
-function stopRec(){
-  mediaRec.stop(); mediaRec.stream.getTracks().forEach(t=>t.stop()); mediaRec=null;
-  recBtn.innerText = '🎤 Record Message'; recBtn.className='rec';
+
+  // 2. Онлайн търсене през Flask
+  try {
+    const res = await fetch(`${BACKEND_URL}/search?q=` + encodeURIComponent(query));
+    if(!res.ok) throw new Error("Server error " + res.status);
+    const data = await res.json();
+    statusDiv.innerText = `Found ${data.length} results from YouTube`;
+    showResults(data, "online");
+  } catch(e) {
+    statusDiv.innerText = "Error: " + e.message;
+    console.error(e);
+  }
 }
 
-function tick(){
-  setInterval(()=>{
-    if(msgQueue.length && Date.now() >= msgQueue[0].playAt){
-      playMessage(msgQueue.shift());
-    }
-  },200);
+function showResults(tracks, type) {
+  const resultsDiv = document.getElementById('results');
+  resultsDiv.innerHTML = "";
+  tracks.forEach(t => {
+    const div = document.createElement('div');
+    div.className = "track";
+    div.innerText = `${t.artist} - ${t.title}`;
+    div.onclick = () => playTrack(t.url, type);
+    resultsDiv.appendChild(div);
+  });
 }
 
-function playMessage(item){
-  if(!musicPlaying) return; isDucked = true;
-  gainNode.gain.setTargetAtTime(0.3, ctx.currentTime, 0.3); // DUCK TO 30%
-  let msgAudio = new Audio(URL.createObjectURL(item.blob));
-  ctx.createMediaElementSource(msgAudio).connect(ctx.destination);
-  msgAudio.play();
-  msgAudio.onended = () => { gainNode.gain.setTargetAtTime(normalVol, ctx.currentTime, 0.5); isDucked = false; }
+function playTrack(url, type) {
+  const player = document.getElementById('player');
+  const statusDiv = document.getElementById('status');
+  if(type === "online") {
+    player.src = `${BACKEND_URL}/play?url=` + encodeURIComponent(url);
+    statusDiv.innerText = "Loading from YouTube...";
+  } else {
+    player.src = url;
+    statusDiv.innerText = "Playing local file";
+  }
+  player.play();
+  player.onerror = (e) => { statusDiv.innerText = "Playback error"; console.error(e); }
 }
 </script>
+
 </body>
 </html>
