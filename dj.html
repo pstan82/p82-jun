@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>DJ Player</title>
+<title>🎧 DJ Player</title>
 <style>
   body { background:#111; color:#eee; font-family: Arial; text-align:center; padding:20px; }
   #search { width: 60%; padding:12px; border-radius:8px; border:none; font-size:16px; }
@@ -15,23 +15,14 @@
 </style>
 </head>
 <body>
-
 <h1>🎧 DJ Player</h1>
 <input id="search" type="text" placeholder="Search artist or song...">
 <button onclick="searchTrack()">Search</button>
-
 <div id="status"></div>
 <div id="results"></div>
-
 <audio id="player" controls></audio>
-
 <script>
-// СМЕНИ ТОВА С ТВОЯ CODESPACE URL
-const BACKEND_URL = "https://xxx-5000.app.github.dev"; 
-
-const LOCAL_LIBRARY = [
-  {title: "Local Test", artist: "Me", url: "mp3/test.mp3"}
-];
+const BACKEND_URL = "https://redesigned-potato-q7vq979697vw26wg9-5000.app.github.dev";
 
 async function searchTrack() {
   const query = document.getElementById('search').value;
@@ -39,57 +30,35 @@ async function searchTrack() {
   const statusDiv = document.getElementById('status');
   resultsDiv.innerHTML = "";
   statusDiv.innerText = "Searching...";
-
-  // 1. Локално търсене
-  let local = LOCAL_LIBRARY.filter(t =>
-    (t.title + t.artist).toLowerCase().includes(query.toLowerCase())
-  );
-
-  if(local.length > 0) {
-    statusDiv.innerText = "Found in local library";
-    showResults(local, "local");
-    return;
-  }
-
-  // 2. Онлайн търсене през Flask
   try {
     const res = await fetch(`${BACKEND_URL}/search?q=` + encodeURIComponent(query));
     if(!res.ok) throw new Error("Server error " + res.status);
     const data = await res.json();
     statusDiv.innerText = `Found ${data.length} results from YouTube`;
-    showResults(data, "online");
+    showResults(data);
   } catch(e) {
     statusDiv.innerText = "Error: " + e.message;
     console.error(e);
   }
 }
-
-function showResults(tracks, type) {
+function showResults(tracks) {
   const resultsDiv = document.getElementById('results');
   resultsDiv.innerHTML = "";
   tracks.forEach(t => {
     const div = document.createElement('div');
     div.className = "track";
     div.innerText = `${t.artist} - ${t.title}`;
-    div.onclick = () => playTrack(t.url, type);
+    div.onclick = () => playTrack(t.url);
     resultsDiv.appendChild(div);
   });
 }
-
-function playTrack(url, type) {
+function playTrack(url) {
   const player = document.getElementById('player');
   const statusDiv = document.getElementById('status');
-  if(type === "online") {
-    player.src = `${BACKEND_URL}/play?url=` + encodeURIComponent(url);
-    statusDiv.innerText = "Loading from YouTube...";
-  } else {
-    player.src = url;
-    statusDiv.innerText = "Playing local file";
-  }
+  player.src = `${BACKEND_URL}/play?url=` + encodeURIComponent(url);
+  statusDiv.innerText = "Loading from YouTube...";
   player.play();
-  player.onerror = (e) => { statusDiv.innerText = "Playback error"; console.error(e); }
 }
 </script>
-
 </body>
 </html>
